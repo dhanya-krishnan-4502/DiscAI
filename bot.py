@@ -539,6 +539,30 @@ async def suggest(ctx):
     await ctx.send(f"💬 **Suggested Reply:**\n{suggestion}")
 
 @bot.command()
+async def summarize_image(ctx):
+    """
+    Summarizes the text in an uploaded image (such as a meme) using OCR and GPT.
+    """
+    if ctx.message.attachments:
+        image_url = ctx.message.attachments[0].url
+        # Get image data
+        image_data = requests.get(image_url).content
+        # Extract text from the image using OCR
+        extracted_text = extract_text_from_image(image_data)
+        
+        if not extracted_text:
+            await ctx.send("❌ No readable text found in the image.")
+            return
+        
+        # Create a prompt for summarization
+        prompt = f"Summarize the following text from a meme in a concise and fun way:\n\n{extracted_text}"
+        summary = await ask_ai(prompt)
+        await ctx.send(f"📝 **Summary:** {summary}")
+    else:
+        await ctx.send("❌ Please attach an image to summarize.")
+
+
+@bot.command()
 async def search(ctx, *, keyword: str):
     messages = message_history.get(ctx.channel.id, [])
     results = [m for m in messages if keyword.lower() in m.lower()]
