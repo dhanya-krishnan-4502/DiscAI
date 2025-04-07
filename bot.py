@@ -3,11 +3,15 @@ from discord.ext import commands
 import openai
 import googletrans
 import requests
+import re
 import pytesseract
 from PIL import Image
 import io
+import smtplib
 import os
+import asyncio
 from dotenv import load_dotenv
+from email.mime.text import MIMEText
 load_dotenv()
 
 
@@ -17,7 +21,8 @@ WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 CURRENCY_API_KEY = os.getenv("CURRENCY_API_KEY")
 
-openai.api_key = os.getenv("openai.api_key")
+# openai.api_key = os.getenv("openai.api_key")
+openai.api_key = OPENAI_API_KEY
 # intents = discord.Intents.default()
 # intents.messages = True
 # intents.message_content = True
@@ -292,6 +297,38 @@ async def ask_ai(question):
     )
     return response.choices[0].message.content.strip()
 
+def send_sms_via_email(phone_number, carrier, message_text):
+    # Define carrier gateways
+    gateways = {
+        "verizon": "vtext.com",
+        "att": "txt.att.net",      # For AT&T
+        "tmobile": "tmomail.net",
+        "sprint": "messaging.sprintpcs.com",
+    }
+    
+    # Check if carrier is supported
+    if carrier.lower() not in gateways:
+        raise ValueError("Carrier not supported. Available: verizon, att, tmobile, sprint.")
+    
+    recipient = f"{phone_number}@{gateways[carrier.lower()]}"
+    
+    # Email server configuration from environment variables
+    smtp_server = os.getenv("SMTP_SERVER")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    sender_email = os.getenv("SENDER_EMAIL")
+    sender_password = os.getenv("SENDER_PASSWORD")
+    
+    msg = MIMEText(message_text)
+    msg["From"] = sender_email
+    msg["To"] = recipient
+    msg["Subject"] = ""  # SMS messages usually don't use a subject
+    
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+
+
 def get_weather(city):
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric"
     response = requests.get(url).json()
@@ -340,12 +377,19 @@ def parse_natural_time(input_str):
             seconds += value
     return seconds
 
-async def schedule_reminder(ctx, delay, message):
+async def schedule_reminder(ctx, delay, message_text):
     try:
         await asyncio.sleep(delay)
-        await ctx.send(f"🔔 <@{ctx.author.id}> Reminder: {message}")
+        # Send reminder in Discord
+        await ctx.send(f"🔔 <@{ctx.author.id}> Reminder: {message_text}")
+        
+        # Send SMS reminder using email-to-SMS gateway
+        phone_number = os.getenv("RECIPIENT_PHONE_NUMBER")  # e.g., "1234567890"
+        carrier = os.getenv("RECIPIENT_CARRIER")            # e.g., "att"
+        send_sms_via_email(phone_number, carrier, f"Reminder: {message_text}")
     except asyncio.CancelledError:
         await ctx.send("❌ Reminder was cancelled.")
+
 
 async def summarize_messages(channel):
     messages = "\n".join(message_history.get(channel.id, [])[-50:])
